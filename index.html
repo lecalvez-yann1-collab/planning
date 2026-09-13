@@ -9,6 +9,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0a0a0f" id="themeColor">
 <title>Planning 2026</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
@@ -341,7 +345,7 @@ body{font-family:'Space Grotesk',sans-serif;color:var(--text);display:flex;flex-
       <div class="dz-icon">📂</div>
       <div class="dz-title">Appuyez pour choisir un fichier</div>
       <div class="dz-sub">ou glissez-déposez ici</div>
-      <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
     </div>
     <div class="import-status" id="importStatus"></div>
     <button class="close-btn" onclick="closeOverlay()">Fermer</button>
@@ -405,6 +409,73 @@ const MGMT = ['FERREIRA','CONDETTE','LEON','PHILIPPE'];
 
 let SCHEDULE = SCHEDULE_DATA;
 let person = null, monthIdx = 0;
+
+// ── Persistance import (localStorage, IndexedDB si trop gros) ──
+const IMPORT_KEY = 'planning2026_import';
+const IMPORT_META = 'planning2026_import_meta';
+
+function idbReq(store, mode, fn) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('planning2026', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      try {
+        const tx = db.transaction('kv', mode);
+        const st = tx.objectStore('kv');
+        const req = fn(st);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      } catch (e) { reject(e); }
+    };
+  });
+}
+
+async function saveImport(schedule, filename) {
+  const payload = { schedule, filename, timestamp: Date.now() };
+  const json = JSON.stringify(payload);
+  try {
+    localStorage.setItem(IMPORT_KEY, json);
+    localStorage.removeItem(IMPORT_META);
+  } catch (e) {
+    // Quota / trop gros → IndexedDB
+    await idbReq('kv', 'readwrite', st => st.put(payload, IMPORT_KEY));
+    localStorage.setItem(IMPORT_META, JSON.stringify({
+      filename: payload.filename,
+      timestamp: payload.timestamp,
+      storage: 'idb'
+    }));
+    try { localStorage.removeItem(IMPORT_KEY); } catch (_) {}
+  }
+}
+
+async function loadImport() {
+  try {
+    const raw = localStorage.getItem(IMPORT_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && data.schedule) return data;
+    }
+  } catch (_) {}
+  try {
+    const meta = localStorage.getItem(IMPORT_META);
+    if (meta) {
+      const data = await idbReq('kv', 'readonly', st => st.get(IMPORT_KEY));
+      if (data && data.schedule) return data;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function applySavedImport(saved) {
+  if (!saved || !saved.schedule) return false;
+  SCHEDULE = saved.schedule;
+  const label = saved.filename || 'import';
+  document.getElementById('fileLabel').textContent = `Mis à jour • ${label}`;
+  document.getElementById('badge').style.display = 'inline';
+  return true;
+}
 
 // ── Heures par code ──
 // F = Facilité (10h), postes 1/2/4 = 7h30, poste 3 = 8h30
@@ -793,7 +864,7 @@ async function readZip(buffer) {
 
 function handleFile(file) {
   const st = document.getElementById('importStatus');
-  if (!file.name.match(/\.xlsx?$/i)) {
+  if (!file.name.match(/\.xlsx$/i)) {
     st.textContent = '❌ Format invalide — .xlsx uniquement';
     st.className = 'import-status err'; return;
   }
@@ -805,6 +876,11 @@ function handleFile(file) {
       const count = Object.keys(newS).length;
       if (count === 0) throw new Error('Aucune personne trouvée');
       SCHEDULE = newS;
+      try {
+        await saveImport(newS, file.name);
+      } catch (saveErr) {
+        console.warn('Sauvegarde locale impossible', saveErr);
+      }
       st.textContent = `✅ ${count} personnes chargées !`;
       document.getElementById('fileLabel').textContent = `Mis à jour • ${file.name}`;
       document.getElementById('badge').style.display = 'inline';
@@ -922,7 +998,25 @@ if(localStorage.getItem('theme') === 'light'){
   document.getElementById('themeColor').content = '#f2f2f7';
 }
 
-buildGrid();
+(async function init(){
+  try {
+    const saved = await loadImport();
+    if (applySavedImport(saved)) {
+      /* utilise l'import sauvegardé à la place de SCHEDULE_DATA */
+    }
+  } catch (e) {
+    console.warn('Chargement import sauvegardé impossible', e);
+  }
+  buildGrid();
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.warn('SW non enregistré', err);
+    });
+  });
+}
 </script>
 </body>
 </html>
