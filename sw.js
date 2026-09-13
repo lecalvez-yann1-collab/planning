@@ -1,5 +1,5 @@
 /* Service worker — cache shell pour usage hors-ligne */
-const CACHE = 'planning2026-v2';
+const CACHE = 'planning2026-v4';
 const SHELL = [
   './',
   './index.html',
