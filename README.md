@@ -6,7 +6,7 @@ Application téléphone du **Tableau de Service 2026** — consultation du plann
 
 URL GitHub Pages :
 
-**https://lecalvez-yann1-collab.github.io/plannig/**
+**https://lecalvez-yann1-collab.github.io/planning/**
 
 Ouvrez ce lien dans Safari (iPhone) ou Chrome (Android).
 
