@@ -321,6 +321,15 @@ body{font-family:'Space Grotesk',sans-serif;color:var(--text);display:flex;flex-
   transition:all 0.2s;flex-shrink:0;
 }
 .theme-btn:active{border-color:var(--accent);}
+
+#dropZone{position:relative;overflow:hidden;}
+
+
+#fileInput{
+  display:block;width:100%;margin-top:12px;
+  font-size:16px;color:var(--text);
+}
+#dropZone{cursor:default;}
 </style>
 </head>
 <body>
@@ -342,10 +351,9 @@ body{font-family:'Space Grotesk',sans-serif;color:var(--text);display:flex;flex-
     <div class="sheet-title">Mettre à jour</div>
     <div class="sheet-sub">Sélectionnez ou glissez votre nouveau fichier Excel (.xlsx)</div>
     <div class="drop-zone" id="dropZone">
-      <div class="dz-icon">📂</div>
-      <div class="dz-title">Appuyez pour choisir un fichier</div>
-      <div class="dz-sub">ou glissez-déposez ici</div>
-      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
+      <div class="dz-title">Choisir le fichier Excel</div>
+      <div class="dz-sub">Puis Téléchargements ou Fichiers</div>
+      <input type="file" id="fileInput">
     </div>
     <div class="import-status" id="importStatus"></div>
     <button class="close-btn" onclick="closeOverlay()">Fermer</button>
@@ -660,7 +668,6 @@ function showOverlay(){
 function closeOverlay(){document.getElementById('overlay').classList.remove('show');}
 
 document.getElementById('uploadBtn').addEventListener('click', showOverlay);
-document.getElementById('dropZone').addEventListener('click', ()=>document.getElementById('fileInput').click());
 document.getElementById('fileInput').addEventListener('change', e=>{if(e.target.files[0])handleFile(e.target.files[0]);e.target.value='';});
 document.getElementById('overlay').addEventListener('click', e=>{if(e.target===document.getElementById('overlay'))closeOverlay();});
 
@@ -793,7 +800,8 @@ function extractSchedule(raw) {
       const name = String(row[1]||'').trim();
       const nameUp = norm(name);
       if (!name || SKIP.has(nameUp)) continue;
-      if (!TEAM.some(k => nameUp.includes(k))) continue;
+      if (MKEYS.includes(nameUp)) continue;
+      if (MGMT.some(k => nameUp.includes(k))) continue;
       if (!result[name]) result[name] = {};
       result[name][mKey] = dateCols.map(dc => {
         const v = row[dc.c];
@@ -874,7 +882,7 @@ function handleFile(file) {
     try {
       const newS = await parseExcel(ev.target.result);
       const count = Object.keys(newS).length;
-      if (count === 0) throw new Error('Aucune personne trouvée');
+      if (count === 0) throw new Error('Aucune personne trouvée dans la feuille 2026');
       SCHEDULE = newS;
       try {
         await saveImport(newS, file.name);
