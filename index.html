@@ -579,19 +579,25 @@ async function downloadPhoneCopy() {
     const rawLabel = (document.getElementById('fileLabel').textContent || 'import');
     const fnameHint = rawLabel.replace(/^Mis à jour • /, '').split(' • ')[0] || 'import';
     const payload = { schedule: SCHEDULE, filename: fnameHint, timestamp: ts };
-    const payloadJs = JSON.stringify(payload);
+    const payloadJs = JSON.stringify(payload).replace(/</g, '\\u003c');
     let html = null;
     try {
       const res = await fetch('./index.html', { cache: 'no-store' });
       if (res.ok) html = await res.text();
     } catch (_) {}
     if (!html) {
-      html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      /* Ne pas utiliser outerHTML : il casse souvent le <script> sur mobile. */
+      throw new Error('Impossible de lire le modèle de page. Rouvre le site github.io, fais ↑ MàJ, puis enregistre.');
     }
-    const json = JSON.stringify(SCHEDULE);
+    /* Retirer toute ancienne copie intégrée */
+    html = html.replace(/<script type="application\/json" id="planning-saved-json">[\s\S]*?<\\\/script>/g, '');
+    html = html.replace(/<script>window\.__PLANNING_SAVED__=[\s\S]*?<\\\/script>/g, '');
+    const json = JSON.stringify(SCHEDULE).replace(/</g, '\\u003c');
     const replaced = html.replace(/const SCHEDULE_DATA\s*=\s*\{[\s\S]*?\};/, 'const SCHEDULE_DATA = ' + json + ';');
-    if (replaced !== html) html = replaced;
-    const inject = '<script>window.__PLANNING_SAVED__=' + payloadJs + ';<' + '/script>';
+    if (replaced === html) throw new Error('Modèle HTML inattendu (SCHEDULE_DATA)');
+    html = replaced;
+    const inject = '<script type="application/json" id="planning-saved-json">' + payloadJs + '<' + '/script>' +
+      '<script>(function(){var e=document.getElementById("planning-saved-json");if(e){try{window.__PLANNING_SAVED__=JSON.parse(e.textContent);}catch(err){console.warn(err);}}})();<' + '/script>';
     if (html.includes('</body>')) html = html.replace('</body>', inject + '\n</body>');
     else html += inject;
     html = html.replace(/id="fileLabel">[^<]*/, 'id="fileLabel">Copie téléphone • ' + when);
@@ -1163,6 +1169,12 @@ document.getElementById('savePhoneBtn').addEventListener('click', downloadPhoneC
   try {
     await requestPersistentStorage();
     let saved = null;
+    if (!(window.__PLANNING_SAVED__ && window.__PLANNING_SAVED__.schedule)) {
+      const el = document.getElementById('planning-saved-json');
+      if (el && el.textContent) {
+        try { window.__PLANNING_SAVED__ = JSON.parse(el.textContent); } catch (_) {}
+      }
+    }
     if (window.__PLANNING_SAVED__ && window.__PLANNING_SAVED__.schedule) {
       saved = window.__PLANNING_SAVED__;
     } else {
