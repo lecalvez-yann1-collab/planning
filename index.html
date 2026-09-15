@@ -330,6 +330,8 @@ body{font-family:'Space Grotesk',sans-serif;color:var(--text);display:flex;flex-
   font-size:16px;color:var(--text);
 }
 #dropZone{cursor:default;}
+.hdr-btn.save-btn{background:rgba(52,199,89,0.2);color:var(--green);font-size:12px;padding:8px 10px;}
+.hdr-btn.save-btn:active{transform:scale(0.96);}
 </style>
 </head>
 <body>
@@ -342,6 +344,7 @@ body{font-family:'Space Grotesk',sans-serif;color:var(--text);display:flex;flex-
   </div>
   <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Changer le thème">🌙</button>
   <button class="hdr-btn" id="uploadBtn">⬆ MàJ</button>
+  <button class="hdr-btn save-btn" id="savePhoneBtn" type="button" title="Copie HTML dans Fichiers">💾</button>
 </header>
 
 <!-- Import overlay -->
@@ -418,9 +421,11 @@ const MGMT = ['FERREIRA','CONDETTE','LEON','PHILIPPE'];
 let SCHEDULE = SCHEDULE_DATA;
 let person = null, monthIdx = 0;
 
-// ── Persistance import (localStorage, IndexedDB si trop gros) ──
+// ── Persistance import (localStorage + IndexedDB + Cache API) ──
 const IMPORT_KEY = 'planning2026_import';
 const IMPORT_META = 'planning2026_import_meta';
+const IMPORT_CACHE = 'planning2026-data-v1';
+const IMPORT_CACHE_URL = './__import_local__.json';
 
 function idbReq(store, mode, fn) {
   return new Promise((resolve, reject) => {
@@ -440,35 +445,67 @@ function idbReq(store, mode, fn) {
   });
 }
 
+async function saveImportCache(payload) {
+  if (!('caches' in window)) return;
+  const cache = await caches.open(IMPORT_CACHE);
+  await cache.put(IMPORT_CACHE_URL, new Response(JSON.stringify(payload), {
+    headers: { 'Content-Type': 'application/json' }
+  }));
+}
+
+async function loadImportCache() {
+  if (!('caches' in window)) return null;
+  try {
+    const cache = await caches.open(IMPORT_CACHE);
+    const res = await cache.match(IMPORT_CACHE_URL);
+    if (!res) return null;
+    const data = await res.json();
+    return (data && data.schedule) ? data : null;
+  } catch (_) { return null; }
+}
+
+async function requestPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      return await navigator.storage.persist();
+    }
+  } catch (_) {}
+  return false;
+}
+
 async function saveImport(schedule, filename) {
   const payload = { schedule, filename, timestamp: Date.now() };
-  // Toujours tenter IndexedDB EN PLUS du localStorage (double filet)
   try {
     await idbReq('kv', 'readwrite', st => st.put(payload, IMPORT_KEY));
   } catch (e) {
     console.warn('IDB saveImport', e);
   }
   try {
+    await saveImportCache(payload);
+  } catch (e) {
+    console.warn('Cache saveImport', e);
+  }
+  try {
     localStorage.setItem(IMPORT_KEY, JSON.stringify(payload));
     localStorage.setItem(IMPORT_META, JSON.stringify({
       filename: payload.filename,
       timestamp: payload.timestamp,
-      storage: 'both'
+      storage: 'multi'
     }));
   } catch (e) {
-    // Quota localStorage : meta seule + IDB
     localStorage.setItem(IMPORT_META, JSON.stringify({
       filename: payload.filename,
       timestamp: payload.timestamp,
-      storage: 'idb'
+      storage: 'idb-cache'
     }));
     try { localStorage.removeItem(IMPORT_KEY); } catch (_) {}
   }
+  await requestPersistentStorage();
   return payload;
 }
 
 async function loadImport() {
-  let fromLs = null, fromIdb = null;
+  let fromLs = null, fromIdb = null, fromCache = null;
   try {
     const raw = localStorage.getItem(IMPORT_KEY);
     if (raw) {
@@ -480,13 +517,12 @@ async function loadImport() {
     fromIdb = await idbReq('kv', 'readonly', st => st.get(IMPORT_KEY));
     if (!(fromIdb && fromIdb.schedule)) fromIdb = null;
   } catch (_) {}
-  // Prendre le plus récent entre LS et IDB
-  if (fromLs && fromIdb) {
-    return (fromIdb.timestamp || 0) >= (fromLs.timestamp || 0) ? fromIdb : fromLs;
+  fromCache = await loadImportCache();
+  const cands = [fromLs, fromIdb, fromCache].filter(Boolean);
+  if (cands.length) {
+    cands.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return cands[0];
   }
-  if (fromLs) return fromLs;
-  if (fromIdb) return fromIdb;
-  // Meta seule (ancien chemin) → IDB
   try {
     const meta = localStorage.getItem(IMPORT_META);
     if (meta) {
@@ -519,6 +555,45 @@ function applySavedImport(saved) {
 function markEmbeddedData() {
   document.getElementById('fileLabel').textContent = 'Données intégrées (pas d’import sur cet appareil)';
   document.getElementById('badge').style.display = 'none';
+}
+
+async function downloadPhoneCopy() {
+  if (!SCHEDULE || !Object.keys(SCHEDULE).length) {
+    alert('Aucun planning chargé. Fais d’abord ↑ MàJ.');
+    return;
+  }
+  const stBtn = document.getElementById('savePhoneBtn');
+  const prev = stBtn ? stBtn.textContent : '';
+  if (stBtn) stBtn.textContent = '…';
+  try {
+    const res = await fetch('./index.html', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Impossible de lire le modèle');
+    let html = await res.text();
+    const json = JSON.stringify(SCHEDULE);
+    const replaced = html.replace(/const SCHEDULE_DATA\s*=\s*\{[\s\S]*?\};/, 'const SCHEDULE_DATA = ' + json + ';');
+    if (replaced === html) throw new Error('Modèle HTML inattendu');
+    html = replaced;
+    const when = formatImportWhen(Date.now());
+    html = html.replace(/id="fileLabel">[^<]*/, 'id="fileLabel">Copie téléphone • ' + when);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'planning-telephone-' + new Date().toISOString().slice(0, 10) + '.html';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const label = document.getElementById('fileLabel');
+    if (label) {
+      const cur = label.textContent;
+      label.textContent = 'Fichier HTML enregistré — ouvre-le la prochaine fois (pas le site)';
+      setTimeout(() => { label.textContent = cur; }, 4500);
+    }
+  } catch (e) {
+    alert('Sauvegarde fichier : ' + (e.message || e));
+  } finally {
+    if (stBtn) stBtn.textContent = prev || '💾';
+  }
 }
 
 // ── Heures par code ──
@@ -927,7 +1002,7 @@ function handleFile(file) {
       } catch (saveErr) {
         console.warn('Sauvegarde locale impossible', saveErr);
       }
-      st.textContent = `✅ ${count} personnes chargées !`;
+      st.textContent = `✅ ${count} personnes — enregistrement du fichier HTML…`;
       {
         const when = formatImportWhen(Date.now());
         document.getElementById('fileLabel').textContent = `Mis à jour • ${file.name} • ${when}`;
@@ -936,7 +1011,9 @@ function handleFile(file) {
       buildGrid();
       if (person && SCHEDULE[person]) render();
       else if (person) showSel();
-      setTimeout(closeOverlay, 1800);
+      try { await downloadPhoneCopy(); } catch (e) { console.warn(e); }
+      st.textContent = `✅ Planning gravé dans le fichier HTML — ouvre ce fichier la prochaine fois`;
+      setTimeout(closeOverlay, 3200);
     } catch(err) {
       st.textContent = '❌ ' + err.message;
       st.className = 'import-status err';
@@ -1047,8 +1124,11 @@ if(localStorage.getItem('theme') === 'light'){
   document.getElementById('themeColor').content = '#f2f2f7';
 }
 
+document.getElementById('savePhoneBtn').addEventListener('click', downloadPhoneCopy);
+
 (async function init(){
   try {
+    await requestPersistentStorage();
     const saved = await loadImport();
     if (saved && applySavedImport(saved)) {
       /* import appareil */

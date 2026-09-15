@@ -1,5 +1,5 @@
 /* Service worker — coque hors-ligne ; HTML toujours d'abord depuis le réseau */
-const CACHE = 'planning2026-v5';
+const CACHE = 'planning2026-v6';
 const SHELL = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE && !String(k).startsWith('planning2026-data-')).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -27,6 +27,7 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.pathname.includes('__import_local__')) return;
   const isPage = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname.endsWith('/planning');
 
   event.respondWith((async () => {
