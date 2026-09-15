@@ -591,7 +591,7 @@ async function downloadPhoneCopy() {
     const json = JSON.stringify(SCHEDULE);
     const replaced = html.replace(/const SCHEDULE_DATA\s*=\s*\{[\s\S]*?\};/, 'const SCHEDULE_DATA = ' + json + ';');
     if (replaced !== html) html = replaced;
-    const inject = '<script>window.__PLANNING_SAVED__=' + payloadJs + ';</script>';
+    const inject = '<script>window.__PLANNING_SAVED__=' + payloadJs + ';<' + '/script>';
     if (html.includes('</body>')) html = html.replace('</body>', inject + '\n</body>');
     else html += inject;
     html = html.replace(/id="fileLabel">[^<]*/, 'id="fileLabel">Copie téléphone • ' + when);
