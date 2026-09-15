@@ -1,5 +1,5 @@
-/* Service worker — cache shell pour usage hors-ligne */
-const CACHE = 'planning2026-v4';
+/* Service worker — coque hors-ligne ; HTML toujours d'abord depuis le réseau */
+const CACHE = 'planning2026-v5';
 const SHELL = [
   './',
   './index.html',
@@ -26,9 +26,28 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  const isPage = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname.endsWith('/planning');
+
   event.respondWith((async () => {
-    const url = new URL(req.url);
-    const isPage = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/');
+    // Pages HTML : réseau d'abord, sinon cache (évite une vieille coque)
+    if (isPage) {
+      try {
+        const res = await fetch(req);
+        if (url.origin === self.location.origin && res.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(req, res.clone());
+        }
+        return res;
+      } catch (e) {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        return caches.match('./index.html');
+      }
+    }
+    // Autres assets : cache puis réseau
+    const cached = await caches.match(req);
+    if (cached) return cached;
     try {
       const res = await fetch(req);
       if (url.origin === self.location.origin && res.ok) {
@@ -37,9 +56,6 @@ self.addEventListener('fetch', event => {
       }
       return res;
     } catch (e) {
-      const cached = await caches.match(req);
-      if (cached) return cached;
-      if (isPage) return caches.match('./index.html');
       throw e;
     }
   })());

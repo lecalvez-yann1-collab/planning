@@ -442,13 +442,21 @@ function idbReq(store, mode, fn) {
 
 async function saveImport(schedule, filename) {
   const payload = { schedule, filename, timestamp: Date.now() };
-  const json = JSON.stringify(payload);
+  // Toujours tenter IndexedDB EN PLUS du localStorage (double filet)
   try {
-    localStorage.setItem(IMPORT_KEY, json);
-    localStorage.removeItem(IMPORT_META);
-  } catch (e) {
-    // Quota / trop gros → IndexedDB
     await idbReq('kv', 'readwrite', st => st.put(payload, IMPORT_KEY));
+  } catch (e) {
+    console.warn('IDB saveImport', e);
+  }
+  try {
+    localStorage.setItem(IMPORT_KEY, JSON.stringify(payload));
+    localStorage.setItem(IMPORT_META, JSON.stringify({
+      filename: payload.filename,
+      timestamp: payload.timestamp,
+      storage: 'both'
+    }));
+  } catch (e) {
+    // Quota localStorage : meta seule + IDB
     localStorage.setItem(IMPORT_META, JSON.stringify({
       filename: payload.filename,
       timestamp: payload.timestamp,
@@ -456,16 +464,29 @@ async function saveImport(schedule, filename) {
     }));
     try { localStorage.removeItem(IMPORT_KEY); } catch (_) {}
   }
+  return payload;
 }
 
 async function loadImport() {
+  let fromLs = null, fromIdb = null;
   try {
     const raw = localStorage.getItem(IMPORT_KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      if (data && data.schedule) return data;
+      if (data && data.schedule) fromLs = data;
     }
   } catch (_) {}
+  try {
+    fromIdb = await idbReq('kv', 'readonly', st => st.get(IMPORT_KEY));
+    if (!(fromIdb && fromIdb.schedule)) fromIdb = null;
+  } catch (_) {}
+  // Prendre le plus récent entre LS et IDB
+  if (fromLs && fromIdb) {
+    return (fromIdb.timestamp || 0) >= (fromLs.timestamp || 0) ? fromIdb : fromLs;
+  }
+  if (fromLs) return fromLs;
+  if (fromIdb) return fromIdb;
+  // Meta seule (ancien chemin) → IDB
   try {
     const meta = localStorage.getItem(IMPORT_META);
     if (meta) {
@@ -476,13 +497,28 @@ async function loadImport() {
   return null;
 }
 
+function formatImportWhen(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  } catch (_) { return ''; }
+}
+
 function applySavedImport(saved) {
   if (!saved || !saved.schedule) return false;
   SCHEDULE = saved.schedule;
   const label = saved.filename || 'import';
-  document.getElementById('fileLabel').textContent = `Mis à jour • ${label}`;
+  const when = formatImportWhen(saved.timestamp);
+  document.getElementById('fileLabel').textContent = when
+    ? `Mis à jour • ${label} • ${when}`
+    : `Mis à jour • ${label}`;
   document.getElementById('badge').style.display = 'inline';
   return true;
+}
+
+function markEmbeddedData() {
+  document.getElementById('fileLabel').textContent = 'Données intégrées (pas d’import sur cet appareil)';
+  document.getElementById('badge').style.display = 'none';
 }
 
 // ── Heures par code ──
@@ -892,7 +928,10 @@ function handleFile(file) {
         console.warn('Sauvegarde locale impossible', saveErr);
       }
       st.textContent = `✅ ${count} personnes chargées !`;
-      document.getElementById('fileLabel').textContent = `Mis à jour • ${file.name}`;
+      {
+        const when = formatImportWhen(Date.now());
+        document.getElementById('fileLabel').textContent = `Mis à jour • ${file.name} • ${when}`;
+      }
       document.getElementById('badge').style.display = 'inline';
       buildGrid();
       if (person && SCHEDULE[person]) render();
@@ -1011,11 +1050,14 @@ if(localStorage.getItem('theme') === 'light'){
 (async function init(){
   try {
     const saved = await loadImport();
-    if (applySavedImport(saved)) {
-      /* utilise l'import sauvegardé à la place de SCHEDULE_DATA */
+    if (saved && applySavedImport(saved)) {
+      /* import appareil */
+    } else {
+      markEmbeddedData();
     }
   } catch (e) {
     console.warn('Chargement import sauvegardé impossible', e);
+    markEmbeddedData();
   }
   buildGrid();
 })();
