@@ -440,8 +440,8 @@ function showPostImportWall(filename) {
     '</p>' +
     '<p class="import-hint" style="text-align:left;line-height:1.45">' +
     '1. Le fichier part dans <b>Téléchargements</b> (ou choisis Drive dans le partage).<br>' +
-    '2. Tu peux aussi le mettre sur Drive comme <b>copie de secours</b>.<br>' +
-    '3. Pour l’ouvrir : app <b>Fichiers</b> / <b>Téléchargements</b> → ce .html → ouvrir avec <b>Brave</b>. Ou Drive → ⋮ → Ouvrir avec Brave. Pas l’aperçu Drive. Pas ce site.<br>' +
+    '2. Drive = secours OK, mais <b>télécharge</b> le fichier puis ouvre-le avec Brave — ne l’ouvre pas depuis Drive (ça affiche le code).<br>' +
+    '3. Ouvre <b>Fichiers</b> → <b>Téléchargements</b> → ce .html → <b>Brave</b>. Si le fichier est sur Drive : ⋮ → Télécharger, puis ouvre la copie locale. N’ouvre jamais le .html directement dans Drive (code en clair).<br>' +
     '4. Favori / écran d’accueil = ce fichier, <b>jamais</b> github.io.' +
     '</p>' +
     '<p id="importStatus" class="import-status err">Ferme cet onglet après avoir enregistré le fichier.</p>' +
@@ -627,9 +627,27 @@ async function downloadPhoneCopy() {
     html = html.replace(/<script type="application\/json" id="planning-saved-json">[\s\S]*?<\\\/script>/g, '');
     html = html.replace(/<script>window\.__PLANNING_SAVED__=[\s\S]*?<\\\/script>/g, '');
     const json = JSON.stringify(SCHEDULE).replace(/</g, '\\u003c');
-    const replaced = html.replace(/const SCHEDULE_DATA\s*=\s*\{[\s\S]*?\};/, 'const SCHEDULE_DATA = ' + json + ';');
-    if (replaced === html) throw new Error('Modèle HTML inattendu (SCHEDULE_DATA)');
-    html = replaced;
+    /* Remplacement robuste (brace depth), évite de couper trop tôt. */
+    (function () {
+      const marker = 'const SCHEDULE_DATA';
+      const start = html.indexOf(marker);
+      if (start < 0) throw new Error('Modèle HTML inattendu (SCHEDULE_DATA)');
+      const brace = html.indexOf('{', start);
+      let depth = 0, end = -1;
+      for (let i = brace; i < html.length; i++) {
+        const ch = html[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) { end = i; break; }
+        }
+      }
+      if (end < 0) throw new Error('SCHEDULE_DATA non fermé');
+      let semi = end + 1;
+      while (semi < html.length && /\s/.test(html[semi])) semi++;
+      if (html[semi] === ';') semi++;
+      html = html.slice(0, start) + 'const SCHEDULE_DATA = ' + json + ';' + html.slice(semi);
+    })();
     const inject = '<script type="application/json" id="planning-saved-json">' + payloadJs + '<' + '/script>' +
       '<script>(function(){var e=document.getElementById("planning-saved-json");if(e){try{window.__PLANNING_SAVED__=JSON.parse(e.textContent);}catch(err){console.warn(err);}}})();<' + '/script>';
     if (html.includes('</body>')) html = html.replace('</body>', inject + '\n</body>');
@@ -637,8 +655,9 @@ async function downloadPhoneCopy() {
     html = html.replace(/id="fileLabel">[^<]*/, 'id="fileLabel">Copie téléphone • ' + when);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const fname = 'planning-telephone-' + new Date().toISOString().slice(0, 10) + '.html';
-    /* Android : le partage ne propose souvent que Drive/WhatsApp.
-       On force d'abord le téléchargement → dossier Téléchargements. */
+    /* Téléchargement local uniquement (Téléchargements).
+       Ne PAS ouvrir le partage Drive : ouvrir un .html via Drive
+       (content://com.google…) casse les <script> → code affiché en clair. */
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = fname;
@@ -646,19 +665,10 @@ async function downloadPhoneCopy() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 8000);
-    /* En plus, proposer le partage (Drive) sans bloquer si annulé */
-    try {
-      const file = new File([blob], fname, { type: 'text/html' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Planning téléphone' });
-      }
-    } catch (shareErr) {
-      /* AbortError = normal si l'utilisateur ferme le partage */
-    }
     const label = document.getElementById('fileLabel');
     if (label) {
       const cur = label.textContent;
-      label.textContent = 'Enregistre le .html dans Fichiers, ouvre-le avec Brave — pas le site, pas l’aperçu Drive';
+      label.textContent = 'Fichier dans Téléchargements — ouvre-le avec Brave (pas depuis Drive)';
       setTimeout(() => { label.textContent = cur; }, 6000);
     }
   } catch (e) {
