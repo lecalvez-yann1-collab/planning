@@ -423,6 +423,32 @@ let person = null, monthIdx = 0;
 
 // ── Persistance import (localStorage + IndexedDB + Cache API) ──
 const IMPORT_KEY = 'planning2026_import';
+/* Site GitHub = station de MàJ seulement. Le planning durable = fichier HTML local. */
+function isHostedSite() {
+  const p = location.protocol;
+  return p === 'http:' || p === 'https:';
+}
+function showPostImportWall(filename) {
+  const ov = document.getElementById('overlay');
+  if (!ov) return;
+  ov.classList.add('show');
+  const box = ov.querySelector('.import-box') || ov;
+  const name = filename || 'planning-telephone.html';
+  box.innerHTML = '<h2>Fichier HTML prêt</h2>' +
+    '<p class="import-hint" style="text-align:left;line-height:1.45">' +
+    '<b>Le site ne garde pas ton planning.</b> Brave vide le stockage : si tu reviens ici demain, l’import aura disparu.' +
+    '</p>' +
+    '<p class="import-hint" style="text-align:left;line-height:1.45">' +
+    '1. Enregistre <b>' + name + '</b> dans <b>Fichiers</b> (sur iPhone : Partager → Enregistrer dans Fichiers).<br>' +
+    '2. Tu peux aussi le mettre sur Drive comme <b>copie de secours</b>.<br>' +
+    '3. Pour l’ouvrir : <b>Fichiers → ce .html → partager → Brave</b>. Pas l’aperçu Drive. Pas ce site web.<br>' +
+    '4. Favori / écran d’accueil = ce fichier, <b>jamais</b> github.io.' +
+    '</p>' +
+    '<p id="importStatus" class="import-status err">Ferme cet onglet après avoir enregistré le fichier.</p>' +
+    '<button type="button" class="import-close" id="wallClose">J’ai enregistré le fichier</button>';
+  const btn = document.getElementById('wallClose');
+  if (btn) btn.onclick = function () { ov.classList.remove('show'); };
+}
 const IMPORT_META = 'planning2026_import_meta';
 const IMPORT_CACHE = 'planning2026-data-v1';
 const IMPORT_CACHE_URL = './__import_local__.json';
@@ -553,14 +579,22 @@ function applySavedImport(saved) {
 }
 
 function markEmbeddedData() {
-  document.getElementById('fileLabel').textContent = 'Import perdu — refais ↑ MàJ puis enregistre le fichier';
+  document.getElementById('fileLabel').textContent = isHostedSite()
+    ? 'Site = station MàJ seulement (rien n’est gardé ici)'
+    : 'Import perdu — refais ↑ MàJ puis enregistre le fichier';
   document.getElementById('badge').style.display = 'none';
   try {
     showOverlay();
     const st = document.getElementById('importStatus');
     if (st) {
-      st.textContent = 'Brave a vidé le stockage. Choisis ton Excel (↑ MàJ), enregistre le HTML proposé, puis ouvre CE fichier dans Fichiers — pas le site web.';
+      st.textContent = isHostedSite()
+        ? 'Tu es sur le site web : il NE CONSERVE PAS le planning. ↑ MàJ → enregistre le .html → ouvre-le depuis Fichiers avec Brave (pas Drive aperçu, pas ce site).'
+        : 'Stockage vide. Refais ↑ MàJ, enregistre le HTML, rouvre CE fichier.';
       st.className = 'import-status err';
+    }
+    const hint = document.querySelector('#overlay .import-hint');
+    if (hint && isHostedSite()) {
+      hint.innerHTML = 'Ce site sert <b>uniquement</b> à fabriquer le fichier HTML. Le planning du quotidien = le fichier dans Fichiers.';
     }
   } catch (_) {}
 }
@@ -625,7 +659,7 @@ async function downloadPhoneCopy() {
     const label = document.getElementById('fileLabel');
     if (label) {
       const cur = label.textContent;
-      label.textContent = 'Fichier HTML enregistré — ouvre CE fichier (Fichiers), pas le site web';
+      label.textContent = 'Enregistre le .html dans Fichiers, ouvre-le avec Brave — pas le site, pas l’aperçu Drive';
       setTimeout(() => { label.textContent = cur; }, 6000);
     }
   } catch (e) {
@@ -1050,9 +1084,14 @@ function handleFile(file) {
       buildGrid();
       if (person && SCHEDULE[person]) render();
       else if (person) showSel();
+      let savedName = 'planning-telephone-' + new Date().toISOString().slice(0, 10) + '.html';
       try { await downloadPhoneCopy(); } catch (e) { console.warn(e); }
-      st.textContent = `✅ Planning gravé dans le fichier HTML — ouvre ce fichier la prochaine fois`;
-      setTimeout(closeOverlay, 3200);
+      st.textContent = '✅ Fichier HTML généré — enregistre-le puis ouvre-le (pas ce site)';
+      if (isHostedSite()) {
+        showPostImportWall(savedName);
+      } else {
+        setTimeout(closeOverlay, 2500);
+      }
     } catch(err) {
       st.textContent = '❌ ' + err.message;
       st.className = 'import-status err';
@@ -1192,6 +1231,15 @@ document.getElementById('savePhoneBtn').addEventListener('click', downloadPhoneC
   } catch (e) {
     console.warn('Chargement import sauvegardé impossible', e);
     markEmbeddedData();
+  }
+  if (isHostedSite()) {
+    try {
+      const b = document.getElementById('badge');
+      if (b && b.style.display === 'none') {
+        /* déjà marqué station MàJ */
+      }
+      document.title = 'MàJ Planning (ne pas rouvrir pour consulter)';
+    } catch (_) {}
   }
   buildGrid();
 })();
