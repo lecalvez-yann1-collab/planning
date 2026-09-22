@@ -434,18 +434,18 @@ function showPostImportWall(filename) {
   ov.classList.add('show');
   const box = ov.querySelector('.import-box') || ov;
   const name = filename || 'planning-telephone.html';
-  box.innerHTML = '<h2>Fichier HTML prêt</h2>' +
-    '<p class="import-hint" style="text-align:left;line-height:1.45">' +
-    '<b>Le site ne garde pas ton planning.</b> Brave vide le stockage : si tu reviens ici demain, l’import aura disparu.' +
+  box.innerHTML = '<h2>Fichier prêt</h2>' +
+    '<p class="import-hint" style="text-align:left;line-height:1.5;font-size:15px">' +
+    '<b>' + name + '</b> est dans <b>Téléchargements</b>.' +
     '</p>' +
-    '<p class="import-hint" style="text-align:left;line-height:1.45">' +
-    '1. Le fichier part dans <b>Téléchargements</b> (ou choisis Drive dans le partage).<br>' +
-    '2. Drive = secours OK, mais <b>télécharge</b> le fichier puis ouvre-le avec Brave — ne l’ouvre pas depuis Drive (ça affiche le code).<br>' +
-    '3. Ouvre <b>Fichiers</b> → <b>Téléchargements</b> → ce .html → <b>Brave</b>. Si le fichier est sur Drive : ⋮ → Télécharger, puis ouvre la copie locale. N’ouvre jamais le .html directement dans Drive (code en clair).<br>' +
-    '4. Favori / écran d’accueil = ce fichier, <b>jamais</b> github.io.' +
+    '<p class="import-hint" style="text-align:left;line-height:1.5;font-size:15px">' +
+    '1. Ferme cet onglet.<br>' +
+    '2. Ouvre l’app <b>Fichiers</b> → <b>Téléchargements</b>.<br>' +
+    '3. Tape le fichier → <b>Ouvrir avec Brave</b>.<br>' +
+    '4. <b>Interdit</b> : rouvrir github.io, ou ouvrir le .html dans Drive (ça affiche le code).' +
     '</p>' +
-    '<p id="importStatus" class="import-status err">Ferme cet onglet après avoir enregistré le fichier.</p>' +
-    '<button type="button" class="import-close" id="wallClose">J’ai enregistré le fichier</button>';
+    '<p id="importStatus" class="import-status err">Le site ne garde rien. Seul ce fichier compte.</p>' +
+    '<button type="button" class="import-close" id="wallClose">OK, j’ouvre Téléchargements</button>';
   const btn = document.getElementById('wallClose');
   if (btn) btn.onclick = function () { ov.classList.remove('show'); };
 }
