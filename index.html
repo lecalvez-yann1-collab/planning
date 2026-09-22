@@ -439,9 +439,9 @@ function showPostImportWall(filename) {
     '<b>Le site ne garde pas ton planning.</b> Brave vide le stockage : si tu reviens ici demain, l’import aura disparu.' +
     '</p>' +
     '<p class="import-hint" style="text-align:left;line-height:1.45">' +
-    '1. Enregistre <b>' + name + '</b> dans <b>Fichiers</b> (sur iPhone : Partager → Enregistrer dans Fichiers).<br>' +
+    '1. Le fichier part dans <b>Téléchargements</b> (ou choisis Drive dans le partage).<br>' +
     '2. Tu peux aussi le mettre sur Drive comme <b>copie de secours</b>.<br>' +
-    '3. Pour l’ouvrir : <b>Fichiers → ce .html → partager → Brave</b>. Pas l’aperçu Drive. Pas ce site web.<br>' +
+    '3. Pour l’ouvrir : app <b>Fichiers</b> / <b>Téléchargements</b> → ce .html → ouvrir avec <b>Brave</b>. Ou Drive → ⋮ → Ouvrir avec Brave. Pas l’aperçu Drive. Pas ce site.<br>' +
     '4. Favori / écran d’accueil = ce fichier, <b>jamais</b> github.io.' +
     '</p>' +
     '<p id="importStatus" class="import-status err">Ferme cet onglet après avoir enregistré le fichier.</p>' +
@@ -637,24 +637,23 @@ async function downloadPhoneCopy() {
     html = html.replace(/id="fileLabel">[^<]*/, 'id="fileLabel">Copie téléphone • ' + when);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const fname = 'planning-telephone-' + new Date().toISOString().slice(0, 10) + '.html';
-    const file = new File([blob], fname, { type: 'text/html' });
-    let saved = false;
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
+    /* Android : le partage ne propose souvent que Drive/WhatsApp.
+       On force d'abord le téléchargement → dossier Téléchargements. */
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    /* En plus, proposer le partage (Drive) sans bloquer si annulé */
+    try {
+      const file = new File([blob], fname, { type: 'text/html' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Planning téléphone' });
-        saved = true;
-      } catch (shareErr) {
-        if (shareErr && shareErr.name === 'AbortError') saved = true;
       }
-    }
-    if (!saved) {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fname;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (shareErr) {
+      /* AbortError = normal si l'utilisateur ferme le partage */
     }
     const label = document.getElementById('fileLabel');
     if (label) {

@@ -1,5 +1,5 @@
 /* Service worker — coque hors-ligne ; HTML toujours d'abord depuis le réseau */
-const CACHE = 'planning2026-v10';
+const CACHE = 'planning2026-v11';
 const SHELL = [
   './',
   './index.html',
